@@ -1,7 +1,7 @@
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
-from config import TOKEN
+from config import TOKEN, ADMIN_ID
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -10,6 +10,14 @@ group_selection = {}
 
 # Start command
 async def start(update: Update, context):
+    user_id = update.message.from_user.id
+
+    # Check if the user is the admin
+    if str(user_id) != ADMIN_ID:
+        await update.message.reply_text("Access denied: You are not authorized to use this bot.")
+        return
+    
+    # Welcome message with inline buttons
     keyboard = [
         [InlineKeyboardButton("SBroadcast", callback_data='sbroadcast')],
         [InlineKeyboardButton("GBroadcast", callback_data='gbroadcast')],
@@ -23,6 +31,13 @@ async def button_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
 
+    user_id = update.callback_query.from_user.id
+
+    # Ensure only the admin can interact with the bot
+    if str(user_id) != ADMIN_ID:
+        await query.message.reply_text("Access denied: You are not authorized to use this bot.")
+        return
+
     if query.data == "sbroadcast":
         # Get list of groups the bot is in and allow user to select
         groups = await context.bot.get_chat_administrators(update.effective_chat.id)
@@ -32,7 +47,7 @@ async def button_handler(update: Update, context):
 
         await query.message.reply_text("Groups selected. Now send the message to broadcast.")
     elif query.data == "gbroadcast":
-        # Get all groups the bot is in and broadcast message to all
+        # Ask user to send the message for global broadcasting
         await query.message.reply_text("Please send the message to broadcast to all groups.")
         context.user_data['gbroadcast'] = True
     elif query.data == "close_bot":
@@ -41,6 +56,13 @@ async def button_handler(update: Update, context):
 
 # Handle incoming messages after group selection
 async def message_handler(update: Update, context):
+    user_id = update.message.from_user.id
+
+    # Ensure only the admin can send messages for broadcasting
+    if str(user_id) != ADMIN_ID:
+        await update.message.reply_text("Access denied: You are not authorized to use this bot.")
+        return
+
     if context.user_data.get('gbroadcast'):
         await broadcast_to_all(update.message.text, context)
         context.user_data.pop('gbroadcast', None)
@@ -75,8 +97,10 @@ async def broadcast_to_all(message, context):
 if __name__ == '__main__':
     application = ApplicationBuilder().token(TOKEN).build()
 
+    # Add the handlers for start, button interactions, and messages
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
 
+    # Start the bot with polling
     application.run_polling()
